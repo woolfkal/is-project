@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mountain Climber - Final Summit</title>
+    <style>
+        body {
+            margin: 0;
+            background: #222;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: white;
+            font-family: Arial, sans-serif;
+            flex-direction: column;
+        }
+        canvas {
+            background: #70c5ce; /* Sky blue */
+            border: 4px solid #fff;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        #scoreBoard {
+            font-size: 24px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="scoreBoard">Obstacles Dodged: 0 / 10</div>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const scoreBoard = document.getElementById("scoreBoard");
+
+// Game State
+let gameActive = true;
+let won = false;
+let obstaclesDodged = 0;
+const targetObstacles = 10;
+
+// World Scroll Speed
+let gameSpeed = 4;
+
+// Player (The Hiker)
+const player = {
+    x: 150, 
+    y: 250, 
+    width: 25,
+    height: 35,
+    color: "#ff5722",
+    vy: 0,
+    gravity: 0.6,
+    jumpForce: -12,
+    isGrounded: false
+};
+
+// Background Mountain Slope tracking
+let terrainScroll = 0;
+
+// Obstacles array
+let obstacles = [
+    { x: 900, width: 25, height: 25, color: "#795548", passed: false }
+];
+
+// Target peak flag coordinates
+let flag = { x: -100, spawned: false };
+
+// Input tracking
+const keys = {};
+window.addEventListener("keydown", e => keys[e.code] = true);
+window.addEventListener("keyup", e => keys[e.code] = false);
+
+// Mathematical formula for mountain height
+function getMountainHeight(worldX) {
+    return 300 - (worldX * 0.12); 
+}
+
+function update() {
+    if (!gameActive) return;
+
+    // 1. Scroll the Mountain Terrain forward
+    terrainScroll += gameSpeed;
+
+    // 2. Camera System
+    const playerWorldX = player.x + terrainScroll + player.width / 2;
+    const absoluteGroundY = getMountainHeight(playerWorldX);
+    const cameraOffsetY = 300 - absoluteGroundY;
+
+    // 3. Apply Gravity & Grounding
+    player.vy += player.gravity;
+    player.y += player.vy;
+
+    const screenGroundY = absoluteGroundY + cameraOffsetY;
+
+    if (player.y + player.height >= screenGroundY) {
+        player.y = screenGroundY - player.height;
+        player.vy = 0;
+        player.isGrounded = true;
+    } else {
+        player.isGrounded = false;
+    }
+
+    // 4. Jumping Input
+    if ((keys["Space"] || keys["ArrowUp"] || keys["KeyW"]) && player.isGrounded) {
+        player.vy = player.jumpForce;
+        player.isGrounded = false;
+    }
+
+    // 5. Handle Obstacles
+    if (obstaclesDodged < targetObstacles) {
+        obstacles.forEach(obs => {
+            obs.x -= gameSpeed; 
+
+            // Check if passed safely
+            if (!obs.passed && obs.x + obs.width < player.x) {
+                obs.passed = true;
+                obstaclesDodged++;
+                scoreBoard.innerText = `Obstacles Dodged: ${obstaclesDodged} / ${targetObstacles}`;
+            }
+
+            // Collision Detection
+            const obsWorldX = obs.x + terrainScroll + obs.width / 2;
+            const obsScreenGroundY = getMountainHeight(obsWorldX) + cameraOffsetY;
+            const obsScreenY = obsScreenGroundY - obs.height;
+
+            if (player.x < obs.x + obs.width &&
+                player.x + player.width > obs.x &&
+                player.y < obsScreenY + obs.height &&
+                player.y + player.height > obsScreenY) {
+                
+                // Failed! Reset everything
+                obstaclesDodged = 0;
+                scoreBoard.innerText = `Obstacles Dodged: ${obstaclesDodged} / ${targetObstacles}`;
+                obstacles = [{ x: 900, width: 25, height: 25, color: "#795548", passed: false }];
+                terrainScroll = 0;
+                player.y = 200;
+            }
+        });
+
+        // Clean out old obstacles
+        obstacles = obstacles.filter(obs => obs.x > -50);
+
+        // Dynamic Spawner Loop
+        let lastObs = obstacles[obstacles.length - 1];
+        if (!lastObs || lastObs.x < 550) {
+            let activeObstaclesCount = obstacles.length;
+            if (obstaclesDodged + activeObstaclesCount < targetObstacles) {
+                let baseGap = 300;
+                let randomBonus = Math.random() * 120;
+                let nextX = (lastObs ? lastObs.x : 850) + baseGap + randomBonus;
+                let size = 20 + Math.random() * 15; 
+                obstacles.push({ x: nextX, width: size, height: size, color: "#795548", passed: false });
+            }
+        }
+    }
+
+    // 6. Final Summit Sequence (Triggers instantly when hitting 10)
+    if (obstaclesDodged >= targetObstacles) {
+        // Move any remaining on-screen obstacles away
+        obstacles.forEach(obs => obs.x -= gameSpeed);
+
+        // Spawn the flag just offscreen right
+        if (!flag.spawned) {
+            flag.x = 850; 
+            flag.spawned = true;
+        }
+
+        // Scroll the flag onto the screen
+        if (flag.x > 550) {
+            flag.x -= gameSpeed;
+        } else {
+            // Once flag reaches its spot, the hill stops moving and player marches to the peak!
+            gameSpeed = 0; 
+            player.x += 2; 
+
+            // Trigger win condition when player touches the flag pole
+            if (player.x >= flag.x) {
+                won = true;
+                gameActive = false;
+            }
+        }
+    }
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const playerWorldX = player.x + terrainScroll + player.width / 2;
+    const cameraOffsetY = 300 - getMountainHeight(playerWorldX);
+
+    // 1. Draw Mountain
+    ctx.fillStyle = "#4caf50";
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height);
+    for (let screenX = 0; screenX <= canvas.width; screenX++) {
+        let worldX = screenX + terrainScroll;
+        let screenY = getMountainHeight(worldX) + cameraOffsetY;
+        ctx.lineTo(screenX, screenY);
+    }
+    ctx.lineTo(canvas.width, canvas.height);
+    ctx.fill();
+
+    // 2. Draw Obstacles
+    obstacles.forEach(obs => {
+        ctx.fillStyle = obs.color;
+        const obsWorldX = obs.x + terrainScroll + obs.width / 2;
+        const obsScreenGroundY = getMountainHeight(obsWorldX) + cameraOffsetY;
+        ctx.fillRect(obs.x, obsScreenGroundY - obs.height, obs.width, obs.height);
+    });
+
+    // 3. Draw Peak Flag
+    if (flag.spawned) {
+        const flagWorldX = flag.x + terrainScroll;
+        const flagScreenGroundY = getMountainHeight(flagWorldX) + cameraOffsetY;
+        
+        ctx.fillStyle = "#ffeb3b"; // Yellow pole
+        ctx.fillRect(flag.x, flagScreenGroundY - 50, 5, 50); 
+        ctx.fillStyle = "#f44336"; // Red fabric triangle
+        ctx.beginPath();
+        ctx.moveTo(flag.x + 5, flagScreenGroundY - 50);
+        ctx.lineTo(flag.x + 30, flagScreenGroundY - 37);
+        ctx.lineTo(flag.x + 5, flagScreenGroundY - 25);
+        ctx.fill();
+    }
+
+    // 4. Draw Player
+    ctx.fillStyle = player.color;
+    ctx.fillRect(player.x, player.y, player.width, player.height);
+
+    // 5. Victory Message Overlay
+    if (won) {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 44px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("You climbed the mountain!", canvas.width / 2, canvas.height / 2);
+        
+        ctx.font = "20px Arial";
+        ctx.fillStyle = "#a8ffb2";
+        ctx.fillText("🏆 Summit Reached! 🏆", canvas.width / 2, canvas.height / 2 + 50);
+    }
+}
+
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+
+</body>
+</html>
